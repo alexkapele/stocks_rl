@@ -3,6 +3,7 @@ def create_features(ticker,trading_window=5,keep_sample=False):
     #Trading window in working days
     
     import numpy as np
+    import pandas as pd
     
     raw_data = pd.read_csv('Stocks/' + ticker + '.txt')
     raw_data.set_index('Date',inplace = True)
@@ -53,4 +54,6 @@ def create_features(ticker,trading_window=5,keep_sample=False):
         i = np.random.randint(0,high=len(features)-trading_window-1)
         features = features.iloc[i:i+trading_window,]
     
-    return features
+    prices= raw_data.loc[features.index,]
+    
+    return features, prices
