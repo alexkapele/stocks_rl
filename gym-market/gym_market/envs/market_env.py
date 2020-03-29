@@ -54,12 +54,14 @@ class MarketEnv(gym.Env):
         features_t,pos,hold_time = state
         
         if action*pos>=0:
-            trade_log.append(action)
-            pos += action #increase existing position or apply action if flat or hold
-            pos = min(pos,pos_limit) if pos >= 0 else max(pos,-pos_limit) 
+            if abs(pos) < pos_limit:
+                trade_log.append(action)
+                pos += action #increase existing position or apply action if flat or hold
+            else:
+                trade_log.append(0) 
             hold_time += abs(pos) #increase hold time for all active positions
         elif action*pos<0:
-            trade_log.append(action*abs(pos)+1)
+            trade_log.append(action*(abs(pos)+1))
             pos = action #close all existing positions and apply current action          
             hold_time = abs(pos) #reset hold time
         
@@ -77,23 +79,23 @@ class MarketEnv(gym.Env):
         
         ''' Reward function '''
         #calculate returns up to today's close
-        close_open_returns = self.prices.iloc[self.window_counter]['Close'] / self.prices.iloc[:self.window_counter]['Open']
-        #close_returns = [abs(trade_log[i]) - trade_log[i]*(1-close_open_returns[i]) for i in range(self.window_counter)]
-        close_returns = [1+trade_log[i]*(close_open_returns[i]-1) for i in range(self.window_counter)]
+        close_open_returns = self.prices.iloc[-1]['Close'] / self.prices.iloc[:self.window_counter+1]['Open']
+        close_returns = [1+trade_log[i]*(close_open_returns[i]-1) for i in range(len(close_open_returns))]
+                
         total_return = np.prod(close_returns)
-        
+                
         self.daily_returns.append(total_return)
         #sharpe = total_return/np.std(self.daily_returns)
         
-        a=1
-        b=0.005
-        c=0.05
-        reward = a*total_return + b*hold_time + c*sum(np.absolute(trade_log))
+        a=1000
+        b=-0.005
+        c=-0.05
+        reward = a*close_returns[-1] #+ b*hold_time + c*sum(np.absolute(trade_log))
         
         
         self.window_counter += self.trading_freq
         
-        return np.array(self.state[0].tolist()+[self.state[1], self.state[2]]), reward, done, total_return, {}
+        return np.array(self.state[0].tolist()+[self.state[1], self.state[2]]), reward, done, {'trades': self.trade_log, 'actions': self.action_log, 'pos': self.pos_log, 'prices': self.prices, 'total_return': total_return, 'close_return': close_returns, 'close_open_returns': close_open_returns}
         
     def reset(self):
         
@@ -112,7 +114,7 @@ class MarketEnv(gym.Env):
         
         self.state = (self.features.iloc[0,:],0,0)
         
-        return np.array(self.state)
+        return np.array(self.state[0].tolist()+[self.state[1], self.state[2]])
     
     #def render(self, mode='human', close=False):
         
