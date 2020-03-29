@@ -1,0 +1,2 @@
+model_checkpoint_path: "trader.ckpt"
+all_model_checkpoint_paths: "trader.ckpt"
