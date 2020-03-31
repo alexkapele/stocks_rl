@@ -1,4 +1,4 @@
-def create_features(ticker,trading_window=5,keep_sample=False):
+def create_features(ticker,trading_window=5):
     #Function to calculate useful statistics from raw data
     #Trading window in working days
     
@@ -49,11 +49,4 @@ def create_features(ticker,trading_window=5,keep_sample=False):
     #Remove rows with na features
     features.dropna(inplace=True)
     
-    #Keep random sample of size trading_window  
-    if keep_sample:
-        i = np.random.randint(0,high=len(features)-trading_window-1)
-        features = features.iloc[i:i+trading_window,]
-    
-    prices= raw_data.loc[features.index,]
-    
-    return features, prices
+    return features, raw_data
