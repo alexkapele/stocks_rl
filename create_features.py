@@ -48,7 +48,8 @@ def create_features(ticker,trading_window=21):
         s = pd.Series(array)
         return s.rank(ascending=True,pct=True)[len(s)-1]
     
-    features['perctentile_h_tw'] = features['Open'].rolling(int((1/2)*trading_window)).apply(rank,raw=False)
+    features['perctentile_q_tw'] = features['Open'].rolling(int((1/4)*trading_window)).apply(rank,raw=False)
+    #features['perctentile_h_tw'] = features['Open'].rolling(int((1/2)*trading_window)).apply(rank,raw=False)
     features['perctentile_tw'] = features['Open'].rolling(int((1)*trading_window)).apply(rank,raw=False)    
                                                    
     #features['perctentile_tw'] = features['Open'].rolling(trading_window).apply(rank,raw=False)
