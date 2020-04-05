@@ -98,19 +98,23 @@ class MarketEnv(gym.Env):
         avg_return = (self.prices.iloc[self.window_counter:]['Close']).mean()/self.prices.iloc[self.window_counter]['Open']
         
         c_return = 1
-        c_daily_return = 0.70
-        c_hold = -0.001
+        c_daily_return = 1.5
+        c_hold = -0.02
         c_trades = -0.03
         c_inactive = -0.15
         
         if close_returns[-1]<1:
-            reward_ = -1
+            reward_ = -3
         elif close_returns[-1]>1:
-            reward_ = 1
+            reward_ = 2
         else: 
             reward_ = 0
 
         reward = c_return*reward_ + c_daily_return* np.sign(avg_return-1) + c_hold*self.hold_time + c_trades*sum(np.absolute(trade_log)) + c_inactive*self.inactive_time
+        
+        self.window_counter += self.trading_freq
+        
+        return np.array(self.state[0].tolist()+[self.state[1], self.state[2]]), reward, done, {'trades': self.trade_log, 'actions': self.action_log, 'pos': self.pos_log, 'prices': self.prices, 'total_return': total_return, 'close_return': close_returns, 'close_open_returns': close_open_returns, 'daily_return': close_returns[-1]}
         
     def reset(self):
         
