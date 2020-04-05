@@ -29,8 +29,8 @@ class MarketEnv(gym.Env):
         self.action_space = spaces.Discrete(3) #hold, buy, sell
         self.action_encoding = {0: 0, 1: 1, 2: -1}
     
-        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(19,0), dtype=np.float32)
-        #n features: 17 signals + position (int) + time (int)
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(self.features_all.shape[1],0), dtype=np.float32)
+        #n features: signals + position (int) + abs(pos)-abs(pos_limit) + time (int)
 
         self.seed()
     
@@ -49,7 +49,7 @@ class MarketEnv(gym.Env):
         state = self.state
         action = self.action_encoding[action]
         
-        features_t,pos,hold_time = state
+        features_t,pos,pos_diff,time_to_complete = state
         
         if action*pos>=0:
             if abs(pos) < pos_limit:
@@ -57,11 +57,11 @@ class MarketEnv(gym.Env):
                 pos += action #increase existing position or apply action if flat or hold
             else:
                 trade_log.append(0) 
-            hold_time += abs(pos) #increase hold time for all active positions
+            self.hold_time += abs(pos) #increase hold time for all active positions
         elif action*pos<0:
             trade_log.append(action*(abs(pos)+0))
             pos = 0 #action #close all existing positions and apply current action          
-            hold_time = abs(pos) #reset hold time
+            self.hold_time = abs(pos) #reset hold time
         
         if action == 0 and pos == 0:
             self.inactive_time += 1
@@ -78,7 +78,7 @@ class MarketEnv(gym.Env):
         done = True if self.window_counter == self.trading_window-1 else False
         
         if done==False:
-            self.state = (self.features.iloc[self.window_counter+1,:], pos, hold_time)
+            self.state = (self.features.iloc[self.window_counter+1,:], pos, abs(pos)-abs(pos_limit), self.trading_window-self.window_counter)
         
         ''' Reward function '''
         #calculate returns up to today's close
@@ -95,20 +95,22 @@ class MarketEnv(gym.Env):
         else:
             open_open_return = self.prices.iloc[self.window_counter]['Close'] / self.prices.iloc[self.window_counter]['Open']
         
-        
+        avg_return = (self.prices.iloc[self.window_counter:]['Close']).mean()/self.prices.iloc[self.window_counter]['Open']
         
         c_return = 1
-        c_daily_return = 500
-        c_hold = -0.05
-        c_trades = -0.25
-        c_inactive = -2
-        if close_returns[-1] != 1:
-            reward = c_return*np.sign(close_returns[-1]-1) #+ c_daily_return*open_open_return + c_hold*hold_time + c_trades*sum(np.absolute(trade_log)) + c_inactive*self.inactive_time
+        c_daily_return = 0.70
+        c_hold = -0.001
+        c_trades = -0.03
+        c_inactive = -0.15
         
-        
-        self.window_counter += self.trading_freq
-        
-        return np.array(self.state[0].tolist()+[self.state[1], self.state[2]]), reward, done, {'trades': self.trade_log, 'actions': self.action_log, 'pos': self.pos_log, 'prices': self.prices, 'total_return': total_return, 'close_return': close_returns, 'close_open_returns': close_open_returns, 'daily_return': close_returns[-1]}
+        if close_returns[-1]<1:
+            reward_ = -1
+        elif close_returns[-1]>1:
+            reward_ = 1
+        else: 
+            reward_ = 0
+
+        reward = c_return*reward_ + c_daily_return* np.sign(avg_return-1) + c_hold*self.hold_time + c_trades*sum(np.absolute(trade_log)) + c_inactive*self.inactive_time
         
     def reset(self):
         
@@ -119,6 +121,7 @@ class MarketEnv(gym.Env):
         
         self.window_counter = 0
         self.inactive_time = 0
+        self.hold_time = 0
                 
         self.trade_log = [] #to keep log of all trades
         self.action_log = []
@@ -126,7 +129,9 @@ class MarketEnv(gym.Env):
          
         self.daily_returns = []
         
-        self.state = (self.features.iloc[0,:],0,0)
+        self.state = (self.features.iloc[0,:],0,0,self.trading_window)
+        #self.state = (self.features.iloc[0,:],0,0)
+        
         
         return np.array(self.state[0].tolist()+[self.state[1], self.state[2]])
     
