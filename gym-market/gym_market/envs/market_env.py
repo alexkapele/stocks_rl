@@ -8,11 +8,13 @@ import pandas as pd
 class MarketEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, pos_limit=2, trading_window=21, trading_freq=1, ticker=None, features=None, raw_data=None):
+    def __init__(self, pos_limit=2, trading_window=21, trading_freq=1, stop_loss_thres=0.98, take_prof_thres=1.05, ticker=None, features=None, raw_data=None):
               
         kwargs = {'pos_limit': pos_limit,
                   'trading_window': trading_window,
                   'trading_freq':trading_freq,
+                  'stop_loss_thres': stop_loss_thres,
+                  'take_prof_thres': take_prof_thres,
                   'ticker': ticker,
                   'features':features,
                   'raw_data':raw_data}
@@ -20,6 +22,8 @@ class MarketEnv(gym.Env):
         self.pos_limit = pos_limit
         self.trading_window = trading_window
         self.trading_freq = trading_freq
+        self.stop_loss_thres = stop_loss_thres
+        self.take_prof_thres = take_prof_thres
         self.ticker = ticker
         
         #calculate all features and prices for entire environment
@@ -51,17 +55,25 @@ class MarketEnv(gym.Env):
         
         features_t,pos,pos_diff,time_to_complete = state
         
-        if action*pos>=0:
+        self.active_pos_flag = True #flag to track whether active return needs to be cleared
+        
+        self.stop_loss = True if self.active_return < self.stop_loss_thres else False
+        self.take_profit = True if self.active_return > self.take_prof_thres else False
+
+        if action*pos>=0 and self.stop_loss==False and self.take_profit==False:
             if abs(pos) < pos_limit:
                 trade_log.append(action)
                 pos += action #increase existing position or apply action if flat or hold
             else:
                 trade_log.append(0) 
             self.hold_time += abs(pos) #increase hold time for all active positions
-        elif action*pos<0:
-            trade_log.append(action*(abs(pos)+0))
+        else:
+            #trade_log.append(action*(abs(pos)+0))
+            trade_log.append(-pos)
             pos = 0 #action #close all existing positions and apply current action          
             self.hold_time = abs(pos) #reset hold time
+            self.active_pos_flag = False
+            self.day_pos = self.window_counter
         
         if action == 0 and pos == 0:
             self.inactive_time += 1
@@ -90,12 +102,30 @@ class MarketEnv(gym.Env):
         self.daily_returns.append(total_return)
         #sharpe = total_return/np.std(self.daily_returns)
         
+        '''
+        #Next day's open vs today's open
         if self.window_counter < self.trading_window-1:
             open_open_return = self.prices.iloc[self.window_counter+1]['Open'] / self.prices.iloc[self.window_counter]['Open']
         else:
             open_open_return = self.prices.iloc[self.window_counter]['Close'] / self.prices.iloc[self.window_counter]['Open']
+        '''
+        if self.window_counter < self.trading_window-1:
+            open_open_return = self.prices.iloc[self.window_counter+1]['Open'] / self.prices.iloc[:self.window_counter+1]['Open']
+        else:
+            open_open_return = self.prices.iloc[self.window_counter]['Close'] / self.prices.iloc[:self.window_counter+1]['Open']
+        if self.active_pos_flag:
+            today_return = [1+trade_log[i]*(open_open_return[i]-1) for i in range(self.day_pos,self.window_counter+1)]
+            self.active_return = np.prod(today_return)
+        else:
+            self.active_return = 1   
         
+            
+        
+        
+        #average return of the following days
         avg_return = (self.prices.iloc[self.window_counter:]['Close']).mean()/self.prices.iloc[self.window_counter]['Open']
+        
+        
         
         c_return = 1
         c_daily_return = 1.5
@@ -126,6 +156,10 @@ class MarketEnv(gym.Env):
         self.window_counter = 0
         self.inactive_time = 0
         self.hold_time = 0
+        
+        self.active_return = 1
+        self.day_pos = 0
+        self.stop_loss = False
                 
         self.trade_log = [] #to keep log of all trades
         self.action_log = []
