@@ -56,10 +56,9 @@ class MarketEnv(gym.Env):
         features_t,pos,pos_diff,time_to_complete,stop_loss,take_profit = state
         action = self.action_encoding[action] #convert action from 0,1,2 to 0,1,-1
         
-        #Check stop_loss and take_profit
-        self.stop_loss = True if self.active_return < self.stop_loss_thres else False
         self.stop_loss_log.append(self.stop_loss) #Save stop_loss log for each step
-        self.take_profit = True if self.active_return > self.take_prof_thres else False
+
+        lockin_pl = 0 #reset pl
         
         #Take action (depending on pos_limit & stop_loss/take_profit
         if action*pos>=0 and self.stop_loss==False and self.take_profit==False:
@@ -74,6 +73,14 @@ class MarketEnv(gym.Env):
             trade_log.append(-pos)
             pos = 0 #action #close all existing positions and apply current action          
             self.hold_time = abs(pos) #reset hold time
+            lockin_pl = self.active_return #active return up to date when position is closed (for reward)
+        
+        #Save logs
+        action_log.append(action)
+        pos_log.append(pos)  
+        self.action_log = action_log
+        self.pos_log = pos_log
+        self.trade_log = trade_log
         
         #Calculate inactive time for pernalty (i.e. no position)
         if action == 0 and pos == 0:
@@ -85,22 +92,11 @@ class MarketEnv(gym.Env):
         if (pos_log[self.window_counter]!=0) and (pos_log[self.window_counter-1]==0):        
             self.day_pos = self.window_counter
         
-        #Save logs
-        action_log.append(action)
-        pos_log.append(pos)  
-        self.action_log = action_log
-        self.pos_log = pos_log
-        self.trade_log = trade_log
-               
+        
         #Check if episode is finished
         done = True if self.window_counter == self.trading_window-1 else False
         
-        #Set next step's state
-        if done==False:
-            self.state = (self.features.iloc[self.window_counter+1,:], pos, abs(pos)-abs(pos_limit), self.trading_window-self.window_counter, self.stop_loss, self.take_profit)
-        
-        
-        
+       
         #Calculate returns up to today's close
         close_open_returns = self.prices.iloc[-1]['Close'] / self.prices.iloc[:self.window_counter+1]['Open']
         close_returns = [1+trade_log[i]*(close_open_returns[i]-1) for i in range(len(close_open_returns))]       
@@ -124,6 +120,15 @@ class MarketEnv(gym.Env):
             self.active_return = 1   
         
         
+        #Check stop_loss and take_profit
+        self.stop_loss = True if self.active_return < self.stop_loss_thres else False
+        self.take_profit = True if self.active_return > self.take_prof_thres else False
+        
+         #Set next step's state
+        if done==False:
+            self.state = (self.features.iloc[self.window_counter+1,:], pos, abs(pos)-abs(pos_limit), self.trading_window-self.window_counter, self.stop_loss, self.take_profit)
+        
+        
         #Calculate average return of the following days (for reward function)
         avg_return = (self.prices.iloc[self.window_counter:]['Close']).mean()/self.prices.iloc[self.window_counter]['Open']
         
@@ -133,15 +138,16 @@ class MarketEnv(gym.Env):
         c_hold = -0.02
         c_trades = -0.03
         c_inactive = -0.15
+        c_lockin = 0.5
         
         if close_returns[-1]<1:
-            reward_ = -2
+            reward_ = -3
         elif close_returns[-1]>1:
             reward_ = 1
         else: 
             reward_ = 0
 
-        reward = c_return*reward_ + c_daily_return* np.sign(avg_return-1) + c_hold*self.hold_time + c_trades*sum(np.absolute(trade_log)) + c_inactive*self.inactive_time
+        reward = c_return*reward_ + c_daily_return*np.sign(avg_return-1) + c_hold*self.hold_time + c_trades*sum(np.absolute(trade_log)) + c_inactive*self.inactive_time +  c_lockin*np.sign(lockin_pl-1)
         
         
         self.window_counter += self.trading_freq #Update window_counter
