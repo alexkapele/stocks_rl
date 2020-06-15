@@ -8,14 +8,13 @@ import pandas as pd
 class MarketEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, pos_limit=2, trading_window=21, trading_freq=1, stop_loss_thres=0.98, take_prof_thres=1.05, ticker=None, features=None, raw_data=None):
+    def __init__(self, pos_limit=2, trading_window=21, trading_freq=1, stop_loss_thres=0.98, take_prof_thres=1.05, features=None, raw_data=None):
 
         kwargs = {'pos_limit': pos_limit,
                   'trading_window': trading_window,
                   'trading_freq':trading_freq,
                   'stop_loss_thres': stop_loss_thres,
                   'take_prof_thres': take_prof_thres,
-                  'ticker': ticker,
                   'features':features,
                   'raw_data':raw_data}
 
@@ -24,7 +23,6 @@ class MarketEnv(gym.Env):
         self.trading_freq = trading_freq
         self.stop_loss_thres = stop_loss_thres
         self.take_prof_thres = take_prof_thres
-        self.ticker = ticker
 
         #calculate all features and prices for entire environment
         self.features_all = features
@@ -141,13 +139,13 @@ class MarketEnv(gym.Env):
         c_lockin = 0.5
 
         if close_returns[-1]<1:
-            reward_ = -1
+            reward_ = -3
         elif close_returns[-1]>1:
             reward_ = 1
         else:
             reward_ = 0
 
-        reward = c_return*reward_ +  c_hold*self.hold_time + c_trades*sum(np.absolute(trade_log)) + c_inactive*self.inactive_time +  c_lockin*np.sign(lockin_pl-1)
+        reward = c_return*reward_ + c_hold*self.hold_time + c_trades*sum(np.absolute(trade_log)) + c_inactive*self.inactive_time +  c_lockin*np.sign(lockin_pl-1)
         #c_daily_return*np.sign(avg_return-1) +
 
         self.window_counter += self.trading_freq #Update window_counter
@@ -156,10 +154,14 @@ class MarketEnv(gym.Env):
 
     def reset(self):
 
-        #sample episode's signals
-        i = np.random.randint(0,high=len(self.features_all)-self.trading_window-1)
-        self.features = self.features_all.iloc[i:i+self.trading_window,]
-        self.prices = self.prices_all.loc[self.features.index,]
+        #sample episode's signals (while loop to ensure that each sample only contains data for a single ticker)
+        n_tickers = 2 #initial value so that we enter the while loop
+        while n_tickers>1:
+            i = np.random.randint(0,high=len(self.features_all)-self.trading_window-1)
+            n_tickers = len(self.features_all.iloc[i:i+self.trading_window,].ticker.unique())
+            if n_tickers == 1: #ensure that sample contains data for one ticker only
+                self.features = self.features_all.iloc[i:i+self.trading_window,:-1] #sample and remove 'ticker' column
+                self.prices = self.prices_all.iloc[i:i+self.trading_window,:-1] #sample and remove 'ticker' column
 
         self.window_counter = 0
         self.inactive_time = 0
